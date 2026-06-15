@@ -21,22 +21,20 @@ import (
 	"context"
 	"errors"
 
+	"slices"
+
 	"github.com/Masterminds/semver/v3"
 	"github.com/ProtonMail/gluon/reporter"
 	"github.com/ProtonMail/proton-bridge/v3/internal/events"
 	"github.com/ProtonMail/proton-bridge/v3/internal/safe"
+	"github.com/ProtonMail/proton-bridge/v3/internal/unleash"
 	"github.com/ProtonMail/proton-bridge/v3/internal/updater"
 	"github.com/elastic/go-sysinfo"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/exp/slices"
 )
 
 func (bridge *Bridge) CheckForUpdates() {
 	bridge.goUpdate()
-}
-
-func (bridge *Bridge) InstallUpdateLegacy(version updater.VersionInfoLegacy) {
-	bridge.installChLegacy <- installJobLegacy{version: version, silent: false}
 }
 
 func (bridge *Bridge) InstallUpdate(release updater.Release) {
@@ -182,117 +180,6 @@ func (bridge *Bridge) handleUpdate(version updater.VersionInfo) {
 	bridge.publish(events.UpdateNotAvailable{})
 }
 
-func (bridge *Bridge) handleUpdateLegacy(version updater.VersionInfoLegacy) {
-	log := logrus.WithFields(logrus.Fields{
-		"version": version.Version,
-		"current": bridge.curVersion,
-		"channel": bridge.vault.GetUpdateChannel(),
-	})
-
-	bridge.publish(events.UpdateLatest{
-		VersionLegacy: version,
-	})
-
-	switch {
-	case !version.Version.GreaterThan(bridge.curVersion):
-		log.Debug("No update available")
-
-		bridge.publish(events.UpdateNotAvailable{})
-
-	case version.RolloutProportion < bridge.vault.GetUpdateRollout():
-		log.Info("An update is available but has not been rolled out yet")
-
-		bridge.publish(events.UpdateNotAvailable{})
-
-	case bridge.curVersion.LessThan(version.MinAuto):
-		log.Info("An update is available but is incompatible with this version")
-
-		bridge.publish(events.UpdateAvailable{
-			VersionLegacy: version,
-			Compatible:    false,
-			Silent:        false,
-		})
-
-	case !bridge.vault.GetAutoUpdate():
-		log.Info("An update is available but auto-update is disabled")
-
-		bridge.publish(events.UpdateAvailable{
-			VersionLegacy: version,
-			Compatible:    true,
-			Silent:        false,
-		})
-
-	default:
-		safe.RLock(func() {
-			bridge.installChLegacy <- installJobLegacy{version: version, silent: true}
-		}, bridge.newVersionLock)
-	}
-}
-
-type installJobLegacy struct {
-	version updater.VersionInfoLegacy
-	silent  bool
-}
-
-func (bridge *Bridge) installUpdateLegacy(ctx context.Context, job installJobLegacy) {
-	safe.Lock(func() {
-		log := logrus.WithFields(logrus.Fields{
-			"version": job.version.Version,
-			"current": bridge.curVersion,
-			"channel": bridge.vault.GetUpdateChannel(),
-		})
-
-		if !job.version.Version.GreaterThan(bridge.newVersion) {
-			return
-		}
-
-		log.WithField("silent", job.silent).Info("An update is available")
-
-		bridge.publish(events.UpdateAvailable{
-			VersionLegacy: job.version,
-			Compatible:    true,
-			Silent:        job.silent,
-		})
-
-		err := bridge.updater.InstallUpdateLegacy(ctx, bridge.api, job.version)
-
-		switch {
-		case errors.Is(err, updater.ErrDownloadVerify):
-			// BRIDGE-207: if download or verification fails, we do not want to trigger a manual update. We report in the log and to Sentry
-			// and we fail silently.
-			log.WithError(err).Error("The update could not be installed, but we will fail silently")
-			if reporterErr := bridge.reporter.ReportMessageWithContext(
-				"Cannot download or verify update",
-				reporter.Context{"error": err},
-			); reporterErr != nil {
-				log.WithError(reporterErr).Error("Failed to report update error")
-			}
-
-		case errors.Is(err, updater.ErrUpdateAlreadyInstalled):
-			log.Info("The update was already installed")
-
-		case err != nil:
-			log.WithError(err).Error("The update could not be installed")
-
-			bridge.publish(events.UpdateFailed{
-				VersionLegacy: job.version,
-				Silent:        job.silent,
-				Error:         err,
-			})
-
-		default:
-			log.Info("The update was installed successfully")
-
-			bridge.publish(events.UpdateInstalled{
-				VersionLegacy: job.version,
-				Silent:        job.silent,
-			})
-
-			bridge.newVersion = job.version.Version
-		}
-	}, bridge.newVersionLock)
-}
-
 type installJob struct {
 	Release updater.Release
 	Silent  bool
@@ -318,7 +205,9 @@ func (bridge *Bridge) installUpdate(ctx context.Context, job installJob) {
 			Silent:     job.Silent,
 		})
 
-		err := bridge.updater.InstallUpdate(ctx, bridge.api, job.Release)
+		removeTemporaryFolderDisabled := bridge.unleashService.GetFlagValue(unleash.AfterUpdateTemporaryFolderRemovalDisabled)
+
+		err := bridge.updater.InstallUpdate(ctx, bridge.api, job.Release, removeTemporaryFolderDisabled)
 		switch {
 		case errors.Is(err, updater.ErrReleaseUpdatePackageMissing):
 			log.WithError(err).Error("The update could not be installed but we will fail silently")

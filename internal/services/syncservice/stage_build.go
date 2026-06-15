@@ -27,10 +27,14 @@ import (
 
 	"github.com/ProtonMail/gluon/async"
 	"github.com/ProtonMail/gluon/logging"
+	"github.com/ProtonMail/gluon/reporter"
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 	"github.com/ProtonMail/proton-bridge/v3/internal/services/observability"
 	obsMetrics "github.com/ProtonMail/proton-bridge/v3/internal/services/syncservice/observabilitymetrics"
+	"github.com/ProtonMail/proton-bridge/v3/internal/unleash"
+	"github.com/ProtonMail/proton-bridge/v3/pkg/message"
+	"github.com/ProtonMail/proton-bridge/v3/pkg/utils"
 	"github.com/bradenaw/juniper/parallel"
 	"github.com/bradenaw/juniper/xslices"
 	"github.com/sirupsen/logrus"
@@ -61,9 +65,13 @@ type BuildStage struct {
 
 	panicHandler async.PanicHandler
 	log          *logrus.Entry
+	reporter     reporter.Reporter
 
 	// Observability
 	observabilitySender observability.Sender
+
+	// Feature Flags
+	featureFlagProvider unleash.FeatureFlagValueProvider
 }
 
 func NewBuildStage(
@@ -72,6 +80,8 @@ func NewBuildStage(
 	maxBuildMem uint64,
 	panicHandler async.PanicHandler,
 	observabilitySender observability.Sender,
+	reporter reporter.Reporter,
+	featureFlagProvider unleash.FeatureFlagValueProvider,
 ) *BuildStage {
 	return &BuildStage{
 		input:               input,
@@ -80,6 +90,8 @@ func NewBuildStage(
 		log:                 logrus.WithField("sync-stage", "build"),
 		panicHandler:        panicHandler,
 		observabilitySender: observabilitySender,
+		reporter:            reporter,
+		featureFlagProvider: featureFlagProvider,
 	}
 }
 
@@ -172,6 +184,13 @@ func (b *BuildStage) run(ctx context.Context) {
 					buildBufferPool.Put(buf)
 
 					if err != nil {
+						if errors.Is(err, message.ErrRNGUnavailable) && !b.featureFlagProvider.GetFlagValue(unleash.RNGServiceNotAvailableSentryCallDisabled) {
+							if sentryErr := b.reporter.ReportMessageWithContext("OS RNG unavailable during sync: MIME boundary generation failed",
+								reporter.Context{"err": err.Error(), "msgID": msg.ID}); sentryErr != nil {
+								b.log.WithError(sentryErr).Error("Failed to report RNG unavailable error to Sentry")
+							}
+						}
+
 						req.job.log.WithError(err).WithField("msgID", msg.ID).Error("Failed to build message (sync)")
 
 						if err := req.job.state.AddFailedMessageID(req.getContext(), msg.ID); err != nil {
@@ -189,7 +208,7 @@ func (b *BuildStage) run(ctx context.Context) {
 					return err
 				}
 
-				success := xslices.Filter(result, func(t BuildResult) bool {
+				success := utils.Filter(result, func(t BuildResult) bool {
 					return t.Update != nil
 				})
 
@@ -225,11 +244,13 @@ func (b *BuildStage) run(ctx context.Context) {
 
 func chunkSyncBuilderBatch(batch []proton.FullMessage, maxMemory uint64) [][]proton.FullMessage {
 	var expectedMemUsage uint64
-	var chunks [][]proton.FullMessage
-	var lastIndex int
-	var index int
+	chunks := make([][]proton.FullMessage, 0, len(batch)/2)
+	lastIndex := 0
 
-	for _, v := range batch {
+	// The chunking uses consecutive half-open intervals [a0, b0), [b0, b1),..., [bk, n)
+	// If the next message is too large to fit in the memory, we start a new chunk.
+
+	for index, v := range batch {
 		var dataSize uint64
 		for _, a := range v.Attachments {
 			dataSize += uint64(a.Size) //nolint:gosec // disable G115
@@ -242,14 +263,14 @@ func chunkSyncBuilderBatch(batch []proton.FullMessage, maxMemory uint64) [][]pro
 
 		nextMemSize := expectedMemUsage + dataSize
 		if nextMemSize >= maxMemory {
-			chunks = append(chunks, copySlice(batch[lastIndex:index]))
-			lastIndex = index
+			if index > lastIndex {
+				chunks = append(chunks, copySlice(batch[lastIndex:index]))
+				lastIndex = index
+			}
 			expectedMemUsage = dataSize
 		} else {
 			expectedMemUsage = nextMemSize
 		}
-
-		index++
 	}
 
 	if lastIndex < len(batch) {

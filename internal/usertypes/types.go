@@ -18,15 +18,17 @@
 package usertypes
 
 import (
+	"cmp"
 	"fmt"
 	"reflect"
 	"runtime"
 	"strings"
 
+	"slices"
+
 	"github.com/ProtonMail/gluon/async"
 	"github.com/ProtonMail/go-proton-api"
-	"golang.org/x/exp/maps"
-	"golang.org/x/exp/slices"
+	"github.com/ProtonMail/proton-bridge/v3/pkg/utils"
 )
 
 // MapTo converts the slice to the given type.
@@ -36,7 +38,7 @@ func MapTo[From, To any](from []From) []To {
 	to := make([]To, 0, len(from))
 
 	for _, from := range from {
-		val, ok := reflect.ValueOf(from).Convert(reflect.TypeOf(to).Elem()).Interface().(To)
+		val, ok := reflect.ValueOf(from).Convert(reflect.TypeFor[[]To]().Elem()).Interface().(To)
 		if !ok {
 			panic(fmt.Sprintf("cannot convert %T to %T", from, *new(To))) //nolint:gocritic
 		}
@@ -72,8 +74,8 @@ func GetAddrID(apiAddrs map[string]proton.Address, email string) (string, error)
 
 // GetAddrIdx returns the address with the given index.
 func GetAddrIdx(apiAddrs map[string]proton.Address, idx int) (proton.Address, error) {
-	sorted := sortSlice(maps.Values(apiAddrs), func(a, b proton.Address) bool {
-		return a.Order < b.Order
+	sorted := sortSlice(utils.Values(apiAddrs), func(a, b proton.Address) int {
+		return cmp.Compare(a.Order, b.Order)
 	})
 
 	if idx < 0 || idx >= len(sorted) {
@@ -84,8 +86,8 @@ func GetAddrIdx(apiAddrs map[string]proton.Address, idx int) (proton.Address, er
 }
 
 func GetPrimaryAddr(apiAddrs map[string]proton.Address) (proton.Address, error) {
-	sorted := sortSlice(maps.Values(apiAddrs), func(a, b proton.Address) bool {
-		return a.Order < b.Order
+	sorted := sortSlice(utils.Values(apiAddrs), func(a, b proton.Address) int {
+		return cmp.Compare(a.Order, b.Order)
 	})
 
 	if len(sorted) == 0 {
@@ -96,7 +98,7 @@ func GetPrimaryAddr(apiAddrs map[string]proton.Address) (proton.Address, error) 
 }
 
 // sortSlice returns the given slice sorted by the given comparator.
-func sortSlice[Item any](items []Item, less func(Item, Item) bool) []Item {
+func sortSlice[Item any](items []Item, less func(Item, Item) int) []Item {
 	sorted := make([]Item, len(items))
 
 	copy(sorted, items)

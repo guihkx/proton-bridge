@@ -32,24 +32,32 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var pollPeriod = 10 * time.Minute //nolint:gochecknoglobals
-var pollJitter = 2 * time.Minute  //nolint:gochecknoglobals
+var (
+	pollPeriod = 10 * time.Minute //nolint:gochecknoglobals
+	pollJitter = 2 * time.Minute  //nolint:gochecknoglobals
+)
 
 const filename = "unleash_flags"
+
+// Deprecated: The flags below are deprecated and will be removed in the future.
+const (
+	UserRemovalGluonDataCleanupDisabled          = "InboxBridgeUserRemovalGluonDataCleanupDisabled"
+	UpdateUseNewVersionFileStructureDisabled     = "InboxBridgeUpdateWithOsFilterDisabled"
+	LabelConflictResolverDisabled                = "InboxBridgeLabelConflictResolverDisabled"
+	InternalLabelConflictResolverDisabled        = "InboxBridgeUnexpectedFoldersLabelsStartupFixupDisabled"
+	InternalLabelConflictNonEmptyMailboxDeletion = "InboxBridgeUnknownNonEmptyMailboxDeletion"
+)
 
 const (
 	EventLoopNotificationDisabled                        = "InboxBridgeEventLoopNotificationDisabled"
 	IMAPAuthenticateCommandDisabled                      = "InboxBridgeImapAuthenticateCommandDisabled"
-	UserRemovalGluonDataCleanupDisabled                  = "InboxBridgeUserRemovalGluonDataCleanupDisabled"
-	UpdateUseNewVersionFileStructureDisabled             = "InboxBridgeUpdateWithOsFilterDisabled"
-	LabelConflictResolverDisabled                        = "InboxBridgeLabelConflictResolverDisabled"
 	SMTPSubmissionRequestSentryReportDisabled            = "InboxBridgeSmtpSubmissionRequestSentryReportDisabled"
-	InternalLabelConflictResolverDisabled                = "InboxBridgeUnexpectedFoldersLabelsStartupFixupDisabled"
-	InternalLabelConflictNonEmptyMailboxDeletion         = "InboxBridgeUnknownNonEmptyMailboxDeletion"
 	LinuxVaultPreferredKeychainNotAvailableRetryDisabled = "InboxBridgeLinuxVaultPreferredKeychainNotAvailableRetryDisabled"
 	InboxBridgeU2FLoginEnabled                           = "InboxBridgeU2FLogin"
 	SplitMessageHeaderBodyV2Disabled                     = "InboxBridgeMessageHeaderBodySplitOptimizationDisabled"
+	AfterUpdateTemporaryFolderRemovalDisabled            = "InboxBridgePostUpdateTempFolderDeletionDisabled"
 	FolderUnlabelCallDisabled                            = "InboxBridgeUnlabelCallOnFoldersDisabled"
+	RNGServiceNotAvailableSentryCallDisabled             = "InboxBridgeRNGServiceNotAvailableSentryCallDisabled"
 )
 
 type FeatureFlagValueProvider interface {
@@ -67,26 +75,28 @@ func NewNullUnleashService() *NullUnleashService {
 	return &NullUnleashService{}
 }
 
-type requestFeaturesFn func(ctx context.Context) (proton.FeatureFlagResult, error)
-type Service struct {
-	panicHandler async.PanicHandler
-	timer        *proton.Ticker
+type (
+	requestFeaturesFn func(ctx context.Context) (proton.FeatureFlagResult, error)
+	Service           struct {
+		panicHandler async.PanicHandler
+		timer        *proton.Ticker
 
-	ctx    context.Context
-	cancel context.CancelFunc
+		ctx    context.Context
+		cancel context.CancelFunc
 
-	log *logrus.Entry
+		log *logrus.Entry
 
-	ffStore     map[string]bool
-	ffStoreLock sync.Mutex
+		ffStore     map[string]bool
+		ffStoreLock sync.Mutex
 
-	cacheFilepath string
-	cacheFileLock sync.Mutex
+		cacheFilepath string
+		cacheFileLock sync.Mutex
 
-	channel chan map[string]bool
+		channel chan map[string]bool
 
-	getFeaturesFn func(ctx context.Context) (proton.FeatureFlagResult, error)
-}
+		getFeaturesFn func(ctx context.Context) (proton.FeatureFlagResult, error)
+	}
+)
 
 func NewBridgeService(
 	ctx context.Context,

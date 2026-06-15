@@ -3,6 +3,35 @@
 Changelog [format](http://keepachangelog.com/en/1.0.0/)
 
 
+## Oberbaum Bridge 3.25.0
+
+### Added
+* BRIDGE-519: Include recipients address in an errormapped error.
+* BRIDGE-547: Automatically retry failing tests on CI.
+* BRIDGE-511: Include the full error-chain when an update fails to install.
+* BRIDGE-139: New test that checks the validity of KB article URLs.
+* BRIDGE-531: New modernize linter and CI go:fix piplines added.
+* BRIDGE-559: NoSuchUser error gets mapped to a user friendly message.
+
+### Changed
+* BRIDGE-534: Usage of exp/maps replaced with maps from standard library.
+* BRIDGE-526: Go toolchain bump to 1.26.2.
+* BRIDGE-514: Map API validation errors to a more user-friendly error.
+* BRIDGE-528: Removed old legacy versioner utility & legacy updater logic.
+* BRIDGE-486: Removed stale feature flags.
+* BRIDGE-483: Patch vulnerabilities for March 2026.
+* BRIDGE-548: Modify message building MIME boundary generation logic (stochastic).
+
+### Fixed
+* BRIDGE-557: Change Local Cache uses QFileDialog instead of Qt.Quick Folder Dialog.
+* BRIDGE-540: Runtime index out of bounds error during build stage.
+* BRIDGE-515: Replace old go syntax using go:fix to match new go 1.26 syntax.
+* BRIDGE-503: Dependencies update and updated deprecated functions.
+* BRIDGE-512: Attachment filenames are sanitized in user debug mode.
+* BRIDGE-415: Remove temporary directory after update installation on macOS.
+* BRIDGE-499: Correct error value gets logged when building a RFC822 message.
+
+
 ## Nescio Bridge 3.24.2
 
 ### Changed
@@ -29,11 +58,33 @@ Changelog [format](http://keepachangelog.com/en/1.0.0/)
 * BRIDGE-456: Optimize message building and decrpytion process with buffer pooling and improve RFC822 handling.
 * BRIDGE-482: Updated texts in error messages regarding Hardware Keys authentication flow on Windows.
 
+
+## Margit Bridge 3.23.1
+
 ### Fixed
-* BRIDGE-382: Attempt to fix flaky Windows tests & a possible race condition fix in shared_identity.
-* BRIDGE-488: Revert old pre 3.23.0 RemoveFromMailbox behavior.
-* BRIDGE-481: Fixed username not being show on specific OSes in FIDO authentication flow.
-* BRIDGE-485: Fixed messages not being expunged from old locations and separated it from the unlabeling logic.
+* BRIDGE-488: Restore previous RemoveFromMailbox behavior (< 3.23.0). Drafts moved to trash should not be perma-deleted.
+
+
+## Margit Bridge 3.23.0
+
+### Added
+* BRIDGE-432: MacOS26 new icon customization support.
+* BRIDGE-312: New option to display the current Bridge version in CLI mode.
+* BRIDGE-453: Display UI spinner when Bridge has no active internet connection to the server.
+
+### Changed
+* BRIDGE-477: Log additional data for Human Verification requests.
+* BRIDGE-255: Updated macOS tray icon setting descriptions.
+* BRIDGE-442: Include the CC header when importing messages.
+* BRIDGE-451: Do not call message unlabel endpoints when moving to/from folders.
+
+### Fixed
+* BRIDGE-454: Prevent crashes during synchronization metadata stage (out-of-bounds).
+* BRIDGE-474: Prevent panic on Windows 10 1809, and resolve runtime crash on Windows 10 22H2 related to Hardware Key authentication.
+* BRIDGE-444: Upgrade account banner dismisses correctly when signing in.
+* BRIDGE-431: Resolve Ubuntu autostart issue, multiple escape characters included during overwrite.
+* BRIDGE-337: Display relevent account when selecting from tray menu.
+* BRIDGE-452: Resolve second-password prompt cancellation leading to wrong Login screen.
 
 
 ## Laviolette Bridge 3.22.0

@@ -27,6 +27,7 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -55,7 +56,6 @@ import (
 	"github.com/ProtonMail/proton-bridge/v3/internal/user"
 	"github.com/ProtonMail/proton-bridge/v3/internal/vault"
 	"github.com/ProtonMail/proton-bridge/v3/pkg/keychain"
-	"github.com/bradenaw/juniper/xslices"
 	"github.com/elastic/go-sysinfo/types"
 	"github.com/go-resty/resty/v2"
 	uuid "github.com/google/uuid"
@@ -84,9 +84,8 @@ type Bridge struct {
 	imapEventCh chan imapEvents.Event
 
 	// updater is the bridge's updater.
-	updater         Updater
-	installChLegacy chan installJobLegacy
-	installCh       chan installJob
+	updater   Updater
+	installCh chan installJob
 
 	// heartbeat is the telemetry heartbeat for metrics.
 	heartbeat *heartBeatState
@@ -293,9 +292,8 @@ func newBridge(
 		tlsConfig:   tlsConfig,
 		imapEventCh: imapEventCh,
 
-		updater:         updater,
-		installChLegacy: make(chan installJobLegacy),
-		installCh:       make(chan installJob),
+		updater:   updater,
+		installCh: make(chan installJob),
 
 		curVersion:     curVersion,
 		newVersion:     curVersion,
@@ -320,7 +318,7 @@ func newBridge(
 		lastVersion: lastVersion,
 
 		tasks:       tasks,
-		syncService: syncservice.NewService(panicHandler, obsService),
+		syncService: syncservice.NewService(panicHandler, obsService, reporter, unleashService),
 
 		unleashService: unleashService,
 
@@ -450,16 +448,10 @@ func (bridge *Bridge) init(tlsReporter TLSReporter) error {
 	// Check for updates when triggered.
 	bridge.goUpdate = bridge.tasks.PeriodicOrTrigger(constants.UpdateCheckInterval, 0, func(ctx context.Context) {
 		logPkg.Info("Checking for updates")
-		var versionLegacy updater.VersionInfoLegacy
 		var version updater.VersionInfo
 		var err error
 
-		useOldUpdateLogic := bridge.GetFeatureFlagValue(unleash.UpdateUseNewVersionFileStructureDisabled)
-		if useOldUpdateLogic {
-			versionLegacy, err = bridge.updater.GetVersionInfoLegacy(ctx, bridge.api, bridge.vault.GetUpdateChannel())
-		} else {
-			version, err = bridge.updater.GetVersionInfo(ctx, bridge.api)
-		}
+		version, err = bridge.updater.GetVersionInfo(ctx, bridge.api)
 
 		if err != nil {
 			bridge.publish(events.UpdateCheckFailed{Error: err})
@@ -473,21 +465,10 @@ func (bridge *Bridge) init(tlsReporter TLSReporter) error {
 				}
 			}
 		} else {
-			if useOldUpdateLogic {
-				bridge.handleUpdateLegacy(versionLegacy)
-			} else {
-				bridge.handleUpdate(version)
-			}
+			bridge.handleUpdate(version)
 		}
 	})
 	defer bridge.goUpdate()
-
-	// Install updates when available - based on old update logic
-	bridge.tasks.Once(func(ctx context.Context) {
-		async.RangeContext(ctx, bridge.installChLegacy, func(job installJobLegacy) {
-			bridge.installUpdateLegacy(ctx, job)
-		})
-	})
 
 	// Install updates when available - based on new update logic
 	bridge.tasks.Once(func(ctx context.Context) {
@@ -588,7 +569,7 @@ func (bridge *Bridge) remWatcher(watcher *watcher.Watcher[events.Event]) {
 	bridge.watchersLock.Lock()
 	defer bridge.watchersLock.Unlock()
 
-	idx := xslices.Index(bridge.watchers, watcher)
+	idx := slices.Index(bridge.watchers, watcher)
 
 	if idx < 0 {
 		return

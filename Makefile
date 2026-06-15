@@ -9,10 +9,10 @@ TARGET_OS?=${GOOS}
 ROOT_DIR:=$(realpath .)
 
 ## Build
-.PHONY: build build-gui build-nogui build-launcher versioner hasher install-libfido2
+.PHONY: build build-gui build-nogui build-launcher hasher install-libfido2
 
 # Keep version hardcoded so app build works also without Git repository.
-BRIDGE_APP_VERSION?=3.24.2+git
+BRIDGE_APP_VERSION?=3.25.0+git
 APP_VERSION:=${BRIDGE_APP_VERSION}
 APP_FULL_NAME:=Proton Mail Bridge
 APP_VENDOR:=Proton AG
@@ -147,9 +147,6 @@ ${EXE_NAME}: gofiles  ${RESOURCE_FILE}
 build-launcher: ${RESOURCE_FILE}
 	$(call go-build-finalize,${BUILD_FLAGS_LAUNCHER},"${LAUNCHER_EXE}","${ROOT_DIR}/${LAUNCHER_PATH}/","${ROOT_DIR}/${LAUNCHER_PATH}/${RESOURCE_FILE}")
 
-versioner:
-	go build ${BUILD_FLAGS} -o versioner utils/versioner/main.go
-
 vault-editor:
 	$(call go-build-finalize,-tags=debug,"vault-editor","./utils/vault-editor/main.go")
 
@@ -222,16 +219,24 @@ ${RESOURCE_FILE}: ./dist/info.rc ./dist/${SRC_ICO} .FORCE
 		-o ./${RESOURCE_FILE} $<
 
 ## Dev dependencies
-.PHONY: install-devel-tools install-linter install-go-mod-outdated install-git-hooks
+.PHONY: install-devel-tools install-linter install-go-mod-outdated install-git-hooks install-gotestsum
 LINTVER:="v2.11.3"
 LINTSRC:="https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh"
 
-install-dev-dependencies: install-devel-tools install-linter install-go-mod-outdated
+install-dev-dependencies: install-devel-tools install-linter install-go-mod-outdated install-test-tools
 
 install-devel-tools: check-has-go
 	go get -v github.com/golang/mock/gomock
 	go get -v github.com/golang/mock/mockgen
 	go get -v github.com/go-delve/delve
+
+install-test-tools: check-has-go check-has-gotestsum
+
+check-has-gotestsum:
+	which gotestsum >/dev/null 2>&1 || $(MAKE) install-gotestsum
+
+install-gotestsum:
+	go install gotest.tools/gotestsum@v1.13.0
 
 install-linter: check-has-go
 	curl -sfL $(LINTSRC) | sh -s -- -b $(shell go env GOPATH)/bin $(LINTVER)
@@ -267,8 +272,22 @@ add-license:
 change-copyright-year:
 	./utils/missing_license.sh change-year
 
-GOCOVERAGE=-covermode=count -coverpkg=github.com/ProtonMail/proton-bridge/v3/internal/...,github.com/ProtonMail/proton-bridge/v3/pkg/...,
+GOCOVERAGE=-covermode=count -coverpkg=github.com/ProtonMail/proton-bridge/v3/internal/...,github.com/ProtonMail/proton-bridge/v3/pkg/...
 GOCOVERDIR=-args -test.gocoverdir=$$PWD/coverage
+
+test-with-retry: install-test-tools gofiles
+	mkdir -p coverage/unit-${GOOS}
+	gotestsum \
+		--format=standard-verbose \
+		--junitfile test-${GOOS}.${BUILD_ENV}.xml \
+		--rerun-fails=2 \
+		--packages="./internal/... ./pkg/..." \
+		-- \
+		-v -timeout=20m -p=1 -count=1 \
+		${GOCOVERAGE} \
+		-run=${TESTRUN} \
+		./internal/... ./pkg/... \
+		${GOCOVERDIR}/unit-${GOOS}
 
 test: gofiles
 	mkdir -p coverage/unit-${GOOS}
@@ -366,6 +385,10 @@ lint-bug-report:
 
 lint-bug-report-preview:
 	python3 utils/validate_bug_report_file.py --file "internal/frontend/bridge-gui/bridge-gui/qml/Resources/bug_report_flow.json" --preview
+
+.PHONY: gofix
+gofix: check-has-go gofiles
+	./utils/gofix-run.sh
 
 updates: install-go-mod-outdated
 	# Uncomment the "-ci" to fail the job if something can be updated.

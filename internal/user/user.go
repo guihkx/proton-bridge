@@ -18,10 +18,13 @@
 package user
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"slices"
 
 	"github.com/ProtonMail/gluon/async"
 	"github.com/ProtonMail/gluon/reporter"
@@ -43,11 +46,10 @@ import (
 	"github.com/ProtonMail/proton-bridge/v3/internal/usertypes"
 	"github.com/ProtonMail/proton-bridge/v3/internal/vault"
 	"github.com/ProtonMail/proton-bridge/v3/pkg/algo"
+	"github.com/ProtonMail/proton-bridge/v3/pkg/utils"
 	"github.com/bradenaw/juniper/xslices"
 	"github.com/go-resty/resty/v2"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/exp/maps"
-	"golang.org/x/exp/slices"
 )
 
 var (
@@ -514,7 +516,7 @@ func (user *User) GetGluonID(addrID string) (string, bool) {
 
 	// If there is only one address, return its gluon ID.
 	// This can happen if we are in combined mode and the primary address ID has changed.
-	if gluonIDs := maps.Values(user.vault.GetGluonIDs()); len(gluonIDs) == 1 {
+	if gluonIDs := utils.Values(user.vault.GetGluonIDs()); len(gluonIDs) == 1 {
 		if err := user.vault.SetGluonID(addrID, gluonIDs[0]); err != nil {
 			user.log.WithError(err).Error("Failed to set gluon ID for updated primary address")
 		}
@@ -596,12 +598,11 @@ func (user *User) CheckAuth(email string, password []byte) (string, error) {
 }
 
 // Logout logs the user out from the API.
-func (user *User) Logout(ctx context.Context, withAPI, withData, withDataDisabledKillSwitch bool) error {
+func (user *User) Logout(ctx context.Context, withAPI, withData bool) error {
 	user.log.WithFields(
 		logrus.Fields{
-			"withAPI":                    withAPI,
-			"withData":                   withData,
-			"withDataDisabledKillSwitch": withDataDisabledKillSwitch,
+			"withAPI":  withAPI,
+			"withData": withData,
 		}).Info("Logging out user")
 
 	user.log.Debug("Canceling ongoing tasks")
@@ -610,7 +611,7 @@ func (user *User) Logout(ctx context.Context, withAPI, withData, withDataDisable
 		return fmt.Errorf("failed to remove user from smtp server: %w", err)
 	}
 
-	if withData && !withDataDisabledKillSwitch {
+	if withData {
 		if err := user.imapService.OnDelete(ctx); err != nil {
 			if rerr := user.reporter.ReportMessageWithContext("Failed to delete user IMAP data", map[string]any{
 				"error": err.Error(),
@@ -742,12 +743,12 @@ func (user *User) protonAddresses() []proton.Address {
 		return nil
 	}
 
-	addresses := xslices.Filter(maps.Values(apiAddrs), func(addr proton.Address) bool {
+	addresses := utils.Filter(utils.Values(apiAddrs), func(addr proton.Address) bool {
 		return addr.Status == proton.AddressStatusEnabled && (addr.IsBYOEAddress() || addr.Type != proton.AddressTypeExternal)
 	})
 
-	slices.SortFunc(addresses, func(a, b proton.Address) bool {
-		return a.Order < b.Order
+	slices.SortFunc(addresses, func(a, b proton.Address) int {
+		return cmp.Compare(a.Order, b.Order)
 	})
 
 	return addresses

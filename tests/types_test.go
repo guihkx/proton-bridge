@@ -19,6 +19,7 @@ package tests
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"io"
 	"os"
@@ -26,6 +27,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"slices"
 
 	"github.com/ProtonMail/gluon/rfc822"
 	"github.com/ProtonMail/go-proton-api"
@@ -35,7 +38,6 @@ import (
 	"github.com/bradenaw/juniper/xslices"
 	"github.com/cucumber/messages-go/v16"
 	"github.com/emersion/go-imap"
-	"golang.org/x/exp/slices"
 )
 
 type Message struct {
@@ -241,18 +243,21 @@ func newMessageStructFromIMAP(msg *imap.Message) MessageStruct {
 }
 
 func formatAddressList(list []*imap.Address) string {
-	var res string
+	var res strings.Builder
 	for idx, address := range list {
 		if address.PersonalName != "" {
-			res += address.PersonalName + " <" + address.Address() + ">"
+			res.WriteString(address.PersonalName)
+			res.WriteString(" <")
+			res.WriteString(address.Address())
+			res.WriteString(">")
 		} else {
-			res += address.Address()
+			res.WriteString(address.Address())
 		}
 		if idx < len(list)-1 {
-			res += "; "
+			res.WriteString("; ")
 		}
 	}
-	return res
+	return res.String()
 }
 
 func parseMessageSection(literal []byte, body string) MessageSection {
@@ -324,12 +329,12 @@ func parseContentDisposition(contentDisp string) (string, string) {
 }
 
 func matchMessages(have, want []Message) error {
-	slices.SortFunc(have, func(a, b Message) bool {
-		return a.Subject < b.Subject
+	slices.SortFunc(have, func(a, b Message) int {
+		return cmp.Compare(a.Subject, b.Subject)
 	})
 
-	slices.SortFunc(want, func(a, b Message) bool {
-		return a.Subject < b.Subject
+	slices.SortFunc(want, func(a, b Message) int {
+		return cmp.Compare(a.Subject, b.Subject)
 	})
 
 	if !IsSub(ToAny(have), ToAny(want)) {
@@ -511,12 +516,12 @@ func newMailboxFromIMAP(status *imap.MailboxStatus) Mailbox {
 }
 
 func matchMailboxes(have, want []Mailbox) error {
-	slices.SortFunc(have, func(a, b Mailbox) bool {
-		return a.Name < b.Name
+	slices.SortFunc(have, func(a, b Mailbox) int {
+		return cmp.Compare(a.Name, b.Name)
 	})
 
-	slices.SortFunc(want, func(a, b Mailbox) bool {
-		return a.Name < b.Name
+	slices.SortFunc(want, func(a, b Mailbox) int {
+		return cmp.Compare(a.Name, b.Name)
 	})
 
 	if !IsSub(want, have) {

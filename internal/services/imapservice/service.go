@@ -39,8 +39,8 @@ import (
 	"github.com/ProtonMail/proton-bridge/v3/internal/unleash"
 	"github.com/ProtonMail/proton-bridge/v3/internal/usertypes"
 	"github.com/ProtonMail/proton-bridge/v3/pkg/cpc"
+	"github.com/ProtonMail/proton-bridge/v3/pkg/utils"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/exp/maps"
 )
 
 type EventProvider interface {
@@ -127,7 +127,7 @@ func NewService(
 	})
 	rwIdentity := newRWIdentity(identityState, bridgePassProvider, keyPassProvider)
 
-	labelConflictManager := NewLabelConflictManager(serverManager, gluonIDProvider, client, reporter, featureFlagProvider)
+	labelConflictManager := NewLabelConflictManager(serverManager, gluonIDProvider, client, reporter)
 	syncUpdateApplier := NewSyncUpdateApplier(labelConflictManager)
 	syncMessageBuilder := NewSyncMessageBuilder(rwIdentity, featureFlagProvider)
 	syncReporter := newSyncReporter(identityState.User.ID, eventPublisher, time.Second)
@@ -412,7 +412,7 @@ func (s *Service) run(ctx context.Context) { //nolint gocyclo
 					continue
 				}
 
-				req.Reply(ctx, maps.Keys(status.FailedMessages), nil)
+				req.Reply(ctx, utils.Keys(status.FailedMessages), nil)
 
 			default:
 				s.log.Error("Received unknown request")
@@ -686,7 +686,7 @@ func (s *Service) cancelSync() {
 }
 
 func (s *Service) getConnectors() []*Connector {
-	return maps.Values(s.connectors)
+	return utils.Values(s.connectors)
 }
 
 type resyncReq struct{}

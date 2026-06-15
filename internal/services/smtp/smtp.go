@@ -31,6 +31,8 @@ import (
 	"strings"
 	"time"
 
+	"slices"
+
 	"github.com/ProtonMail/gluon/async"
 	"github.com/ProtonMail/gluon/rfc5322"
 	"github.com/ProtonMail/gluon/rfc822"
@@ -43,10 +45,10 @@ import (
 	"github.com/ProtonMail/proton-bridge/v3/internal/usertypes"
 	"github.com/ProtonMail/proton-bridge/v3/pkg/message"
 	"github.com/ProtonMail/proton-bridge/v3/pkg/message/parser"
+	"github.com/ProtonMail/proton-bridge/v3/pkg/utils"
 	"github.com/bradenaw/juniper/parallel"
 	"github.com/bradenaw/juniper/xslices"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/exp/slices"
 )
 
 // smtpSendMail sends an email from the given address to the given recipients.
@@ -237,6 +239,19 @@ func (s *Service) sendWithKey(
 	})
 	if err != nil {
 		s.observabilitySender.AddDistinctMetrics(observability.SMTPError, observabilitymetrics.GenerateFailedCreateDraft())
+		if apiErr, ok := errors.AsType[*proton.APIError](err); ok {
+			if apiErr.Status == http.StatusUnprocessableEntity {
+				//nolint:exhaustive // only handle unprocessable entity status codes
+				switch apiErr.Code {
+				case errCodeValidationFailed:
+					return proton.Message{}, ErrValidationFailed
+				case errCodeMessageTooLarge:
+					return proton.Message{}, ErrMessageTooLarge
+				case errCodeInvalidListOfRecipients:
+					return proton.Message{}, ErrInvalidListOfRecipients
+				}
+			}
+		}
 		return proton.Message{}, fmt.Errorf("failed to create draft: %w", err)
 	}
 
@@ -390,7 +405,7 @@ func (s *Service) createDraft(
 	}
 
 	// Check that the sending address is owned by the user, and if so, sanitize it.
-	if idx := xslices.IndexFunc(emails, func(email string) bool {
+	if idx := slices.IndexFunc(emails, func(email string) bool {
 		return strings.EqualFold(email, usertypes.SanitizeEmail(template.Sender.Address))
 	}); idx < 0 {
 		return proton.Message{}, fmt.Errorf("%w: address %q is not owned by user", ErrSenderAddressNotOwned, template.Sender.Address)
@@ -399,7 +414,7 @@ func (s *Service) createDraft(
 	}
 
 	// Check ToList: ensure that ToList only contains addresses we actually plan to send to.
-	template.ToList = xslices.Filter(template.ToList, func(addr *mail.Address) bool {
+	template.ToList = utils.Filter(template.ToList, func(addr *mail.Address) bool {
 		return slices.Contains(to, addr.Address)
 	})
 
@@ -532,10 +547,9 @@ func (s *Service) getRecipients(
 
 		pubKeys, recType, err := client.GetPublicKeys(ctx, recipient)
 		if err != nil {
-			var apiErr *proton.APIError
-			if errors.As(err, &apiErr) && apiErr != nil &&
+			if apiErr, ok := errors.AsType[*proton.APIError](err); ok && apiErr != nil &&
 				apiErr.Status == http.StatusUnprocessableEntity && apiErr.Code == errCodeAddressDoesNotExist {
-				err = fmt.Errorf("%w: %w", ErrRecipientAddressDoesNotExist, err)
+				err = fmt.Errorf("%w: %w", NewErrRecipientAddressDoesNotExist(recipient), err)
 			}
 			return proton.SendPreferences{}, fmt.Errorf("%w: failed to get public key for %s: %w", ErrLookupRecipientPublicKey, recipient, err)
 		}
@@ -571,7 +585,7 @@ func getContactSettings(
 		return proton.ContactSettings{}, fmt.Errorf("failed to get contact data: %w", err)
 	}
 
-	idx := xslices.IndexFunc(contacts, func(contact proton.ContactEmail) bool {
+	idx := slices.IndexFunc(contacts, func(contact proton.ContactEmail) bool {
 		return contact.Email == recipient
 	})
 

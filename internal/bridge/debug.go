@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 
@@ -28,12 +29,11 @@ import (
 	"github.com/ProtonMail/gluon/rfc822"
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/proton-bridge/v3/internal/user"
+	"github.com/ProtonMail/proton-bridge/v3/pkg/utils"
 	"github.com/bradenaw/juniper/iterator"
-	"github.com/bradenaw/juniper/xslices"
 	goimap "github.com/emersion/go-imap"
 	goimapclient "github.com/emersion/go-imap/client"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/exp/maps"
 )
 
 type CheckClientStateResult struct {
@@ -55,13 +55,11 @@ func (bridge *Bridge) CheckClientState(ctx context.Context, checkFlags bool, pro
 	bridge.usersLock.RLock()
 	defer bridge.usersLock.RUnlock()
 
-	users := maps.Values(bridge.users)
-
 	result := CheckClientStateResult{
 		MissingMessages: make(map[string]map[string]user.DiagMailboxMessage),
 	}
 
-	for _, usr := range users {
+	for usr := range maps.Values(bridge.users) {
 		if progressCB != nil {
 			progressCB(fmt.Sprintf("Checking state for user %v", usr.Name()))
 		}
@@ -181,7 +179,7 @@ func (bridge *Bridge) CheckClientState(ctx context.Context, checkFlags bool, pro
 		log.Debugf("Checking for orphans")
 
 		for _, m := range meta.Metadata {
-			filteredLabels := xslices.Filter(m.LabelIDs, func(t string) bool {
+			filteredLabels := utils.Filter(m.LabelIDs, func(t string) bool {
 				switch t {
 				case proton.AllMailLabel:
 					return false

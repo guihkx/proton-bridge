@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -43,7 +44,6 @@ import (
 	"github.com/bradenaw/juniper/stream"
 	"github.com/bradenaw/juniper/xslices"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/exp/slices"
 )
 
 type mailboxCountProvider interface {
@@ -226,6 +226,7 @@ func (s *Connector) GetMessageLiteral(ctx context.Context, id imap.MessageID) ([
 
 		l, buildErr := message.DecryptAndBuildRFC822(addrKR, msg.Message, msg.AttData, defaultMessageJobOpts())
 		if buildErr != nil {
+			s.reportRNGError(buildErr)
 			return buildErr
 		}
 
@@ -317,6 +318,7 @@ func (s *Connector) CreateMessage(ctx context.Context, _ connector.IMAPStateWrit
 			message.SplitHeaderBodyV2Disabled.Swap(s.featureFlagValueProvider.GetFlagValue(unleash.SplitMessageHeaderBodyV2Disabled))
 
 			if literal, err = message.DecryptAndBuildRFC822(addrKR, full.Message, full.AttData, defaultMessageJobOpts()); err != nil {
+				s.reportRNGError(err)
 				return err
 			}
 
@@ -957,6 +959,7 @@ func (s *Connector) importMessage(
 		message.SplitHeaderBodyV2Disabled.Swap(s.featureFlagValueProvider.GetFlagValue(unleash.SplitMessageHeaderBodyV2Disabled))
 
 		if literal, err = message.DecryptAndBuildRFC822(primaryKey, full.Message, full.AttData, defaultMessageJobOpts()); err != nil {
+			s.reportRNGError(err)
 			return fmt.Errorf("failed to build message: %w", err)
 		}
 
@@ -1043,7 +1046,7 @@ func fixGODT3003Labels(
 		case proton.LabelTypeFolder:
 			if mbox.Name[0] != folderPrefix {
 				log.WithField("labelID", mbox.ID.ShortID()).Debug("Found folder without prefix, patching")
-				if err := write.PatchMailboxHierarchyWithoutTransforms(ctx, mbox.ID, xslices.Insert(mbox.Name, 0, folderPrefix)); err != nil {
+				if err := write.PatchMailboxHierarchyWithoutTransforms(ctx, mbox.ID, slices.Insert(mbox.Name, 0, folderPrefix)); err != nil {
 					return false, fmt.Errorf("failed to update mailbox name: %w", err)
 				}
 
@@ -1052,7 +1055,7 @@ func fixGODT3003Labels(
 		case proton.LabelTypeLabel:
 			if mbox.Name[0] != labelPrefix {
 				log.WithField("labelID", mbox.ID.ShortID()).Debug("Found label without prefix, patching")
-				if err := write.PatchMailboxHierarchyWithoutTransforms(ctx, mbox.ID, xslices.Insert(mbox.Name, 0, labelPrefix)); err != nil {
+				if err := write.PatchMailboxHierarchyWithoutTransforms(ctx, mbox.ID, slices.Insert(mbox.Name, 0, labelPrefix)); err != nil {
 					return false, fmt.Errorf("failed to update mailbox name: %w", err)
 				}
 
@@ -1146,4 +1149,15 @@ func (s *Connector) SetGluonIDProviderTest(provider gluonIDProvider) {
 // SetMailboxCountProviderTest - sets the relevant provider. Should only be used for testing.
 func (s *Connector) SetMailboxCountProviderTest(provider mailboxCountProvider) {
 	s.mailboxCountProvider = provider
+}
+
+func (s *Connector) reportRNGError(err error) {
+	if !errors.Is(err, message.ErrRNGUnavailable) || s.featureFlagValueProvider.GetFlagValue(unleash.RNGServiceNotAvailableSentryCallDisabled) {
+		return
+	}
+
+	if sentryErr := s.reporter.ReportMessageWithContext("OS RNG unavailable: MIME boundary generation failed",
+		reporter.Context{"err": err.Error()}); sentryErr != nil {
+		logrus.WithError(sentryErr).Error("Failed to report RNG unavailable error to Sentry")
+	}
 }

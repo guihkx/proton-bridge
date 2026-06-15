@@ -16,7 +16,6 @@
 // along with Proton Mail Bridge. If not, see <https://www.gnu.org/licenses/>.
 
 //go:build !darwin
-// +build !darwin
 
 package updater
 
@@ -38,7 +37,7 @@ func NewInstaller(versioner *versioner.Versioner) *InstallerDefault {
 	}
 }
 
-func (i *InstallerDefault) InstallUpdate(version *semver.Version, r io.Reader) error {
+func (i *InstallerDefault) InstallUpdate(version *semver.Version, r io.Reader, _ bool) error {
 	return i.versioner.InstallNewVersion(version, r)
 }
 

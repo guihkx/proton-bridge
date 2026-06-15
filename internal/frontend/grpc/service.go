@@ -30,6 +30,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 	"time"
 
@@ -44,7 +45,6 @@ import (
 	"github.com/ProtonMail/proton-bridge/v3/internal/safe"
 	"github.com/ProtonMail/proton-bridge/v3/internal/service"
 	"github.com/ProtonMail/proton-bridge/v3/internal/updater"
-	"github.com/bradenaw/juniper/xslices"
 	"github.com/elastic/go-sysinfo"
 	sysinfotypes "github.com/elastic/go-sysinfo/types"
 	"github.com/google/uuid"
@@ -80,13 +80,11 @@ type Service struct {
 	eventCh      <-chan events.Event
 	quitCh       <-chan struct{}
 
-	latestLegacy updater.VersionInfoLegacy
-	latest       updater.Release
-	latestLock   safe.RWMutex
+	latest     updater.Release
+	latestLock safe.RWMutex
 
-	targetLegacy updater.VersionInfoLegacy
-	target       updater.Release
-	targetLock   safe.RWMutex
+	target     updater.Release
+	targetLock safe.RWMutex
 
 	authClient              *proton.Client
 	auth                    proton.Auth
@@ -174,13 +172,11 @@ func NewService(
 		eventCh:      eventCh,
 		quitCh:       quitCh,
 
-		latestLegacy: updater.VersionInfoLegacy{},
-		latest:       updater.Release{},
-		latestLock:   safe.NewRWMutex(),
+		latest:     updater.Release{},
+		latestLock: safe.NewRWMutex(),
 
-		targetLegacy: updater.VersionInfoLegacy{},
-		target:       updater.Release{},
-		targetLock:   safe.NewRWMutex(),
+		target:     updater.Release{},
+		targetLock: safe.NewRWMutex(),
 
 		log:                logrus.WithField("pkg", "grpc"),
 		initializing:       sync.WaitGroup{},
@@ -364,7 +360,6 @@ func (s *Service) watchEvents() {
 
 		case events.UpdateLatest:
 			safe.RLock(func() {
-				s.latestLegacy = event.VersionLegacy
 				s.latest = event.Release
 			}, s.latestLock)
 
@@ -377,7 +372,6 @@ func (s *Service) watchEvents() {
 
 			case !event.Silent:
 				safe.RLock(func() {
-					s.targetLegacy = event.VersionLegacy
 					s.target = event.Release
 				}, s.targetLock)
 
@@ -403,8 +397,6 @@ func (s *Service) watchEvents() {
 
 			if s.latest.Version != nil {
 				latest = s.latest.Version.String()
-			} else if s.latestLegacy.Version != nil {
-				latest = s.latestLegacy.Version.String()
 			} else if latestVersion, ok := s.checkLatestVersion(); ok {
 				latest = latestVersion
 			} else {
@@ -597,7 +589,7 @@ func validateServerToken(ctx context.Context, wantToken string) error {
 
 // newUnaryTokenValidator checks the server token for every unary gRPC call.
 func newUnaryTokenValidator(wantToken string) grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		if err := validateServerToken(ctx, wantToken); err != nil {
 			return nil, err
 		}
@@ -608,7 +600,7 @@ func newUnaryTokenValidator(wantToken string) grpc.UnaryServerInterceptor {
 
 // newStreamTokenValidator checks the server token for every gRPC stream request.
 func newStreamTokenValidator(wantToken string) grpc.StreamServerInterceptor {
-	return func(srv interface{}, stream grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return func(srv any, stream grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if err := validateServerToken(stream.Context(), wantToken); err != nil {
 			return err
 		}
@@ -636,7 +628,7 @@ func (s *Service) monitorParentPID() {
 				continue
 			}
 
-			if !xslices.Any(processes, func(p sysinfotypes.Process) bool { return p != nil && p.PID() == s.parentPID }) {
+			if !slices.ContainsFunc(processes, func(p sysinfotypes.Process) bool { return p != nil && p.PID() == s.parentPID }) {
 				s.log.Info("Parent process does not exist anymore. Initiating shutdown")
 				// quit will write to the parentPIDDoneCh, so we launch a goroutine.
 				go func() {
@@ -675,7 +667,7 @@ func (s *Service) handleHvRequest(err error) {
 // computeFileSocketPath Return an available path for a socket file in the temp folder.
 func computeFileSocketPath() (string, error) {
 	tempPath := os.TempDir()
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		path := filepath.Join(tempPath, fmt.Sprintf("bridge%04d", rand.Intn(10000))) // nolint:gosec
 		if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
 			return path, nil

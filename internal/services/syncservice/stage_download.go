@@ -28,6 +28,7 @@ import (
 	"github.com/ProtonMail/gluon/logging"
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/proton-bridge/v3/internal/network"
+	"github.com/ProtonMail/proton-bridge/v3/pkg/utils"
 	"github.com/bradenaw/juniper/parallel"
 	"github.com/bradenaw/juniper/xslices"
 	"github.com/sirupsen/logrus"
@@ -138,7 +139,7 @@ func (d *DownloadStage) run(ctx context.Context) {
 		}
 
 		// Filter out any messages that don't exist.
-		result = xslices.Filter(result, func(t proton.FullMessage) bool {
+		result = utils.Filter(result, func(t proton.FullMessage) bool {
 			return t.ID != ""
 		})
 
@@ -147,7 +148,7 @@ func (d *DownloadStage) run(ctx context.Context) {
 
 		for msgIdx, v := range result {
 			numAttachments := len(v.Attachments)
-			for attIdx := 0; attIdx < numAttachments; attIdx++ {
+			for attIdx := range numAttachments {
 				attachmentIndices = append(attachmentIndices, attachmentMeta{
 					msgIdx: msgIdx,
 					attIdx: attIdx,
@@ -291,10 +292,7 @@ func (d DefaultDownloadRateModifier) Apply(wasSuccess bool, currentValue int, ma
 		return 2
 	}
 
-	parallelTasks := currentValue * 2
-	if parallelTasks > maxValue {
-		parallelTasks = maxValue
-	}
+	parallelTasks := min(currentValue*2, maxValue)
 
 	return parallelTasks
 }

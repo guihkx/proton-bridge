@@ -17,7 +17,9 @@
 
 package grpc
 
-import "github.com/bradenaw/juniper/xslices"
+import (
+	"github.com/ProtonMail/proton-bridge/v3/pkg/utils"
+)
 
 // isInternetStatus returns true iff the event is InternetStatus.
 func (x *StreamEvent) isInternetStatus() bool {
@@ -28,5 +30,5 @@ func (x *StreamEvent) isInternetStatus() bool {
 
 // filterOutInternetStatusEvents return a copy of the events list where all internet connection events have been removed.
 func filterOutInternetStatusEvents(events []*StreamEvent) []*StreamEvent {
-	return xslices.Filter(events, func(event *StreamEvent) bool { return !event.isInternetStatus() })
+	return utils.Filter(events, func(event *StreamEvent) bool { return !event.isInternetStatus() })
 }

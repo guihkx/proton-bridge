@@ -17,8 +17,11 @@
 
 package bridge
 
-import "golang.org/x/exp/maps"
+import "github.com/ProtonMail/proton-bridge/v3/pkg/utils"
 
+// GetHelpersNames returns the names of the available keychains.
 func (bridge *Bridge) GetHelpersNames() []string {
-	return maps.Keys(bridge.keychains.GetHelpers())
+	helpers := bridge.keychains.GetHelpers()
+
+	return utils.Keys(helpers)
 }
