@@ -261,7 +261,11 @@ func TestBridge_SyncWithOngoingEvents(t *testing.T) {
 		netCtl.SetReadLimit(2 * total / 3)
 
 		// Login the user; its sync should fail.
-		withBridge(ctx, t, s.GetHostURL(), netCtl, locator, storeKey, func(b *bridge.Bridge, _ *bridge.Mocks) {
+		withBridge(ctx, t, s.GetHostURL(), netCtl, locator, storeKey, func(b *bridge.Bridge, mocks *bridge.Mocks) {
+			// gluon: fix(BRIDGE-618): fix UpdateRemoteMessageID correct SQL table(a2a1c48062cb3ffb92899cc299e66b048f39e612)
+			// MessageWithContext wasn't working properly previously, this now gets reported properly.
+			mocks.Reporter.EXPECT().ReportMessageWithContextAndTags("Failed to apply connector update", gomock.Any(), gomock.Any()).AnyTimes()
+
 			syncCh, done := chToType[events.Event, events.SyncFinished](b.GetEvents(events.SyncFinished{}))
 			defer done()
 

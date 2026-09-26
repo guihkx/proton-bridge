@@ -3,6 +3,27 @@
 Changelog [format](http://keepachangelog.com/en/1.0.0/)
 
 
+## Queshuachaca Bridge 3.27.0
+
+### Added
+* Added the expected mock for properly reported errors from Gluon.
+* BRIDGE-616: Maximum MIME structure depth added.
+
+### Changed
+* BRIDGE-622: Patch vulnerabilities August 2026.
+* BRIDGE-619: Gluon's apply sentry reporting is gated behind a feature-flag.
+* Separate context with timeout used in session.done() handler.
+* External WKD keys are not used if they cant be imported.
+* BRIDGE-621: Silence Vulnerabilities August 2026.
+
+### Fixed
+* BRIDGE-627: Return RFC3501 compliant response for body-fld-enc & body-fld-param.
+* Fixed an E2E test case; expect human verification when signing in with wrong credentials.
+* BRIDGE-614: Read onDiskLiteral in applyMessageUpdated before any DB transactions.
+* Fixed a deadlock contention in collector_test.
+* BRIDGE-618: UpdateRemoteMessageID used the correct SQL table.
+* BRIDGE-615: RemoveMessagesFromMailbox uses proper chunked ids.
+
 ## Pamban Bridge 3.26.0
 
 ### Added

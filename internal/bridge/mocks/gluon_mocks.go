@@ -96,6 +96,20 @@ func (mr *MockReporterMockRecorder) ReportMessageWithContext(arg0, arg1 any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportMessageWithContext", reflect.TypeOf((*MockReporter)(nil).ReportMessageWithContext), arg0, arg1)
 }
 
+// ReportMessageWithContextAndTags mocks base method.
+func (m *MockReporter) ReportMessageWithContextAndTags(arg0 string, arg1 reporter.Context, arg2 reporter.Tags) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReportMessageWithContextAndTags", arg0, arg1, arg2)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ReportMessageWithContextAndTags indicates an expected call of ReportMessageWithContextAndTags.
+func (mr *MockReporterMockRecorder) ReportMessageWithContextAndTags(arg0, arg1, arg2 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportMessageWithContextAndTags", reflect.TypeOf((*MockReporter)(nil).ReportMessageWithContextAndTags), arg0, arg1, arg2)
+}
+
 // ReportWarningWithContext mocks base method.
 func (m *MockReporter) ReportWarningWithContext(arg0 string, arg1 reporter.Context) error {
 	m.ctrl.T.Helper()
